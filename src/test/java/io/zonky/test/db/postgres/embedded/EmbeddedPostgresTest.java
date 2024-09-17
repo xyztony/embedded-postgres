@@ -26,6 +26,9 @@ import java.sql.Statement;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
 public class EmbeddedPostgresTest
 {
     @TempDir
@@ -42,6 +45,31 @@ public class EmbeddedPostgresTest
             assertEquals(1, rs.getInt(1));
             assertFalse(rs.next());
         }
+    }
+
+    @Test
+    public void testEmbeddedPgWithConnectionPooling() throws Exception
+    {
+	EmbeddedPostgres pg = EmbeddedPostgres.builder().setPooling(true).start();
+	HikariConfig config = new HikariConfig();
+	config.setJdbcUrl(pg.getJdbcUrl("postgres", "postgres"));
+	config.setMaximumPoolSize(5);
+	config.setConnectionTestQuery("SELECT 1");
+	config.setUsername("postgres");
+	config.setPassword("postgres");
+	config.setDriverClassName("org.postgresql.Driver");
+	
+	try (
+	     HikariDataSource ds = new HikariDataSource(config);
+             Connection c = ds.getConnection()) {
+            Statement s = c.createStatement();
+	    ResultSet rs = s.executeQuery("SELECT 1");
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt(1));
+            assertFalse(rs.next());
+	}
+
+	pg.close();
     }
 
     @Test

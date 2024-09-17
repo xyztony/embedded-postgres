@@ -22,6 +22,7 @@ import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.commons.lang3.SystemUtils;
 import org.apache.commons.lang3.time.StopWatch;
+import org.postgresql.ds.PGConnectionPoolDataSource;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -109,18 +110,20 @@ public class EmbeddedPostgres implements Closeable
     private final ProcessBuilder.Redirect errorRedirector;
     private final ProcessBuilder.Redirect outputRedirector;
 
+    private final Boolean pooling;
+
     EmbeddedPostgres(File parentDirectory, File dataDirectory, boolean cleanDataDirectory,
         Map<String, String> postgresConfig, Map<String, String> localeConfig, int port, Map<String, String> connectConfig,
-        PgBinaryResolver pgBinaryResolver, ProcessBuilder.Redirect errorRedirector, ProcessBuilder.Redirect outputRedirector) throws IOException
+		     PgBinaryResolver pgBinaryResolver, ProcessBuilder.Redirect errorRedirector, ProcessBuilder.Redirect outputRedirector, Boolean pooling) throws IOException
     {
         this(parentDirectory, dataDirectory, cleanDataDirectory, postgresConfig, localeConfig, port, connectConfig,
-                pgBinaryResolver, errorRedirector, outputRedirector, DEFAULT_PG_STARTUP_WAIT, null);
+	     pgBinaryResolver, errorRedirector, outputRedirector, pooling, DEFAULT_PG_STARTUP_WAIT, null);
     }
 
     EmbeddedPostgres(File parentDirectory, File dataDirectory, boolean cleanDataDirectory,
                      Map<String, String> postgresConfig, Map<String, String> localeConfig, int port, Map<String, String> connectConfig,
                      PgBinaryResolver pgBinaryResolver, ProcessBuilder.Redirect errorRedirector,
-                     ProcessBuilder.Redirect outputRedirector, Duration pgStartupWait,
+                     ProcessBuilder.Redirect outputRedirector, Boolean pooling, Duration pgStartupWait,
                      File overrideWorkingDirectory) throws IOException
     {
         this.cleanDataDirectory = cleanDataDirectory;
@@ -132,6 +135,7 @@ public class EmbeddedPostgres implements Closeable
         this.errorRedirector = errorRedirector;
         this.outputRedirector = outputRedirector;
         this.pgStartupWait = pgStartupWait;
+	this.pooling = pooling;
         Objects.requireNonNull(this.pgStartupWait, "Wait time cannot be null");
 
         if (parentDirectory != null) {
@@ -184,11 +188,25 @@ public class EmbeddedPostgres implements Closeable
         return getDatabase(userName, dbName, connectConfig);
     }
 
+    public PGConnectionPoolDataSource getPostgresPooledDatabase() {
+        return getPooledDatabase("postgres", "postgres");
+    }
+
+    public PGConnectionPoolDataSource getPostgresPooledDatabase(Map<String, String> properties)
+    {
+        return getPooledDatabase("postgres", "postgres", properties);
+    }
+
+    public PGConnectionPoolDataSource getPooledDatabase(String userName, String dbName) {
+        return getPooledDatabase(userName, dbName, connectConfig);
+    }
+
+
     public DataSource getDatabase(String userName, String dbName, Map<String, String> properties)
     {
         final PGSimpleDataSource ds = new PGSimpleDataSource();
-        ds.setServerName("localhost");
-        ds.setPortNumber(port);
+        ds.setServerNames(new String[]{"localhost"});
+        ds.setPortNumbers(new int[]{port});
         ds.setDatabaseName(dbName);
         ds.setUser(userName);
 
@@ -200,6 +218,25 @@ public class EmbeddedPostgres implements Closeable
             }
         });
         return ds;
+    }
+
+    public PGConnectionPoolDataSource getPooledDatabase(String userName, String dbName, Map<String, String> properties)
+    {
+	System.out.println(">>>>>>>>>> getPooledDatabase");
+        final PGConnectionPoolDataSource ds = new PGConnectionPoolDataSource();
+        ds.setServerNames(new String[]{"localhost"});
+        ds.setPortNumbers(new int[]{port});
+        ds.setDatabaseName(dbName);
+        ds.setUser(userName);
+
+        properties.forEach((propertyKey, propertyValue) -> {
+            try {
+                ds.setProperty(propertyKey, propertyValue);
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        });
+	return ds;
     }
 
     public String getJdbcUrl(String userName, String dbName)
@@ -344,7 +381,8 @@ public class EmbeddedPostgres implements Closeable
         } catch (final IOException e) {
             throw new SQLException("connect failed", e);
         }
-        try (Connection c = getPostgresDatabase().getConnection() ;
+	
+        try (Connection c = this.pooling ? getPostgresPooledDatabase().getConnection() : getPostgresDatabase().getConnection();
                 Statement s = c.createStatement() ;
                 ResultSet rs = s.executeQuery("SELECT 1"))
         {
@@ -494,6 +532,7 @@ public class EmbeddedPostgres implements Closeable
         private int builderPort = 0;
         private final Map<String, String> connectConfig = new HashMap<>();
         private PgBinaryResolver pgBinaryResolver = DefaultPostgresBinaryResolver.INSTANCE;
+	private Boolean builderPooling = false;
         private Duration pgStartupWait = DEFAULT_PG_STARTUP_WAIT;
 
         private ProcessBuilder.Redirect errRedirector = ProcessBuilder.Redirect.PIPE;
@@ -557,6 +596,11 @@ public class EmbeddedPostgres implements Closeable
             return this;
         }
 
+	public Builder setPooling(Boolean pooling) {
+	    builderPooling = pooling;
+	    return this;
+	}
+
         public Builder setErrorRedirector(ProcessBuilder.Redirect errRedirector) {
             this.errRedirector = errRedirector;
             return this;
@@ -582,8 +626,8 @@ public class EmbeddedPostgres implements Closeable
                 builderDataDirectory = Files.createTempDirectory("epg").toFile();
             }
             return new EmbeddedPostgres(parentDirectory, builderDataDirectory, builderCleanDataDirectory, config,
-                    localeConfig, builderPort, connectConfig, pgBinaryResolver, errRedirector, outRedirector,
-                    pgStartupWait, overrideWorkingDirectory);
+		localeConfig, builderPort, connectConfig, pgBinaryResolver, errRedirector, outRedirector,
+		builderPooling, pgStartupWait, overrideWorkingDirectory);
         }
 
         @Override

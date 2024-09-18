@@ -79,6 +79,7 @@ import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static java.util.Collections.unmodifiableMap;
 
+@SuppressWarnings("PMD.AvoidDuplicateLiterals") // "postgres"
 public class EmbeddedPostgres implements Closeable {
 	private static final Logger LOG = LoggerFactory.getLogger(EmbeddedPostgres.class);
 	private static final String JDBC_FORMAT = "jdbc:postgresql://localhost:%s/%s?user=%s";

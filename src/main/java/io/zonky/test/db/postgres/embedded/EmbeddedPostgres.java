@@ -85,7 +85,11 @@ public class EmbeddedPostgres implements Closeable {
 
 	private static final String PG_STOP_MODE = "fast";
 	private static final String PG_STOP_WAIT_S = "5";
-	private static final String DEFAULT_PG_SUPERUSER = "postgres";
+	private static final String DEFAULT_PG = "postgres";
+	private static final String TEMPLATE0 = "template0";
+	private static final String TEMPLATE1 = "template1";
+
+
 	private final String pgUsername;
 	private final String pgPassword;
 	private final String pgDbName;
@@ -131,9 +135,9 @@ public class EmbeddedPostgres implements Closeable {
 			PgBinaryResolver pgBinaryResolver, ProcessBuilder.Redirect errorRedirector,
 			ProcessBuilder.Redirect outputRedirector, Boolean pooling, Duration pgStartupWait,
 			File overrideWorkingDirectory, String username, String password, String dbName) throws IOException {
-		this.pgUsername = username != null ? username : DEFAULT_PG_SUPERUSER;
+		this.pgUsername = username != null ? username : DEFAULT_PG;
 		this.pgPassword = password;
-		this.pgDbName = dbName != null ? dbName : "postgres";
+		this.pgDbName = dbName != null ? dbName : DEFAULT_PG;
 		this.cleanDataDirectory = cleanDataDirectory;
 		this.postgresConfig = new HashMap<>(postgresConfig);
 		this.localeConfig = new HashMap<>(localeConfig);
@@ -144,7 +148,7 @@ public class EmbeddedPostgres implements Closeable {
 		this.outputRedirector = outputRedirector;
 		this.pgStartupWait = pgStartupWait != null ? pgStartupWait : DEFAULT_PG_STARTUP_WAIT;
 		this.pooling = pooling;
-
+		
 		if (parentDirectory != null) {
 			mkdirs(parentDirectory);
 			cleanOldDataDirectories(parentDirectory);
@@ -173,19 +177,19 @@ public class EmbeddedPostgres implements Closeable {
 	}
 
 	public DataSource getTemplateDatabase() {
-		return getDatabase("postgres", "template1");
+		return getDatabase(DEFAULT_PG, TEMPLATE1);
 	}
 
 	public DataSource getTemplateDatabase(Map<String, String> properties) {
-		return getDatabase("postgres", "template1", properties);
+		return getDatabase(DEFAULT_PG, TEMPLATE1, properties);
 	}
 
 	public DataSource getPostgresDatabase() {
-		return getDatabase(pgUsername, pgDbName);
+		return getDatabase(DEFAULT_PG, DEFAULT_PG);
 	}
 
 	public DataSource getPostgresDatabase(Map<String, String> properties) {
-		return getDatabase("postgres", "postgres", properties);
+		return getDatabase(DEFAULT_PG, DEFAULT_PG, properties);
 	}
 
 	public DataSource getDatabase(String userName, String dbName) {
@@ -193,11 +197,11 @@ public class EmbeddedPostgres implements Closeable {
 	}
 
 	public PGConnectionPoolDataSource getPostgresPooledDatabase() {
-		return getPooledDatabase(pgUsername, pgDbName);
+	    return getPooledDatabase(DEFAULT_PG, DEFAULT_PG);
 	}
 
 	public PGConnectionPoolDataSource getPostgresPooledDatabase(Map<String, String> properties) {
-		return getPooledDatabase(pgUsername, pgDbName, properties);
+	    return getPooledDatabase(DEFAULT_PG, DEFAULT_PG, properties);
 	}
 
 	public PGConnectionPoolDataSource getPooledDatabase(String userName, String dbName) {
@@ -291,7 +295,7 @@ public class EmbeddedPostgres implements Closeable {
 		watch.start();
 		List<String> args = new ArrayList<>();
 		args.addAll(Arrays.asList(
-				"-A", "trust", "-U", DEFAULT_PG_SUPERUSER,
+				"-A", "trust", "-U", DEFAULT_PG,
 				"-D", dataDirectory.getPath(), "-E", "UTF-8"));
 		args.addAll(createLocaleOptions());
 		system(INIT_DB, args);
@@ -299,24 +303,23 @@ public class EmbeddedPostgres implements Closeable {
 		LOG.info("{} initdb completed in {}", instanceId, watch);
 	}
 
-	private void createRoles() {
-		try (Connection conn = getDatabase(DEFAULT_PG_SUPERUSER, "postgres").getConnection();
+	private void createRolesAndDatabase() {
+		try (Connection conn = getDatabase(DEFAULT_PG, DEFAULT_PG).getConnection();
 				Statement stmt = conn.createStatement()) {
 			LOG.info("Creating user role: {}", pgUsername);
-			
-			if (!pgDbName.equals("postgres")) {
-				stmt.execute("CREATE DATABASE " + pgDbName + " OWNER " + pgUsername);
-				LOG.info("Created database: {}", pgDbName);
-			}
-			
-			if (!pgUsername.equals(DEFAULT_PG_SUPERUSER)) {
+			if (!pgUsername.equals(DEFAULT_PG)) {
 				stmt.execute("CREATE ROLE " + pgUsername + " LOGIN SUPERUSER");
 				if (pgPassword != null) {
 					stmt.execute("ALTER ROLE " + pgUsername + " WITH PASSWORD '" + pgPassword + "'");
 				}
 				LOG.info("Created role: {}", pgUsername);
 			} else {
-				LOG.info("Using default superuser role: {}", DEFAULT_PG_SUPERUSER);
+				LOG.info("Using default superuser role: {}", DEFAULT_PG);
+			}
+
+			if (!pgDbName.equals(DEFAULT_PG)) {
+				stmt.execute("CREATE DATABASE " + pgDbName + " OWNER " + pgUsername);
+				LOG.info("Created database: {}", pgDbName);
 			}
 
 		} catch (SQLException e) {
@@ -356,7 +359,7 @@ public class EmbeddedPostgres implements Closeable {
 
 		waitForServerStartup(watch);
 
-		createRoles();
+		createRolesAndDatabase();
 	}
 
 	private List<String> createInitOptions() {
@@ -952,7 +955,7 @@ public class EmbeddedPostgres implements Closeable {
 	}
 
 	private final Command INIT_DB = new Command("initdb");
-	private final Command POSTGRES = new Command("postgres");
+	private final Command POSTGRES = new Command(DEFAULT_PG);
 	private final Command PG_CTL = new Command("pg_ctl");
 
 	private class Command {

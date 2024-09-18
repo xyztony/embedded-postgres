@@ -13,22 +13,10 @@
  */
 package io.zonky.test.db.postgres.embedded;
 
-import io.zonky.test.db.postgres.util.LinuxUtils;
-import org.apache.commons.codec.binary.Hex;
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.io.output.ByteArrayOutputStream;
-import org.apache.commons.lang3.SystemUtils;
-import org.apache.commons.lang3.time.StopWatch;
-import org.postgresql.ds.PGConnectionPoolDataSource;
-import org.postgresql.ds.PGSimpleDataSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.tukaani.xz.XZInputStream;
+import static java.nio.file.StandardOpenOption.CREATE;
+import static java.nio.file.StandardOpenOption.WRITE;
+import static java.util.Collections.unmodifiableMap;
 
-import javax.sql.DataSource;
 import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.io.File;
@@ -75,9 +63,23 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
 
-import static java.nio.file.StandardOpenOption.CREATE;
-import static java.nio.file.StandardOpenOption.WRITE;
-import static java.util.Collections.unmodifiableMap;
+import javax.sql.DataSource;
+
+import org.apache.commons.codec.binary.Hex;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.output.ByteArrayOutputStream;
+import org.apache.commons.lang3.SystemUtils;
+import org.apache.commons.lang3.time.StopWatch;
+import org.postgresql.ds.PGConnectionPoolDataSource;
+import org.postgresql.ds.PGSimpleDataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.tukaani.xz.XZInputStream;
+
+import io.zonky.test.db.postgres.util.LinuxUtils;
 
 @SuppressWarnings("PMD.AvoidDuplicateLiterals") // "postgres"
 public class EmbeddedPostgres implements Closeable {
@@ -87,9 +89,7 @@ public class EmbeddedPostgres implements Closeable {
 	private static final String PG_STOP_MODE = "fast";
 	private static final String PG_STOP_WAIT_S = "5";
 	private static final String DEFAULT_PG = "postgres";
-	private static final String TEMPLATE0 = "template0";
-	private static final String TEMPLATE1 = "template1";
-
+    private static final String TEMPLATE1 = "template1";
 
 	private final String pgUsername;
 	private final String pgPassword;
@@ -119,23 +119,22 @@ public class EmbeddedPostgres implements Closeable {
 
 	private final Boolean pooling;
 
-	EmbeddedPostgres(File parentDirectory, File dataDirectory, boolean cleanDataDirectory,
-			Map<String, String> postgresConfig, Map<String, String> localeConfig, int port,
+	EmbeddedPostgres(File parentDirectory,
+			File dataDirectory,
+			boolean cleanDataDirectory,
+			Map<String, String> postgresConfig,
+			Map<String, String> localeConfig,
+			int port,
 			Map<String, String> connectConfig,
-			PgBinaryResolver pgBinaryResolver, ProcessBuilder.Redirect errorRedirector,
-			ProcessBuilder.Redirect outputRedirector, Boolean pooling, String pgUsername, String pgPassword,
-			String pgDatabaseName) throws IOException {
-		this(parentDirectory, dataDirectory, cleanDataDirectory, postgresConfig, localeConfig, port, connectConfig,
-				pgBinaryResolver, errorRedirector, outputRedirector, pooling, DEFAULT_PG_STARTUP_WAIT, null, pgUsername,
-				pgPassword, pgDatabaseName);
-	}
-
-	EmbeddedPostgres(File parentDirectory, File dataDirectory, boolean cleanDataDirectory,
-			Map<String, String> postgresConfig, Map<String, String> localeConfig, int port,
-			Map<String, String> connectConfig,
-			PgBinaryResolver pgBinaryResolver, ProcessBuilder.Redirect errorRedirector,
-			ProcessBuilder.Redirect outputRedirector, Boolean pooling, Duration pgStartupWait,
-			File overrideWorkingDirectory, String username, String password, String dbName) throws IOException {
+			PgBinaryResolver pgBinaryResolver,
+			ProcessBuilder.Redirect errorRedirector,
+			ProcessBuilder.Redirect outputRedirector,
+			Boolean pooling,
+			Duration pgStartupWait,
+			File overrideWorkingDirectory,
+			String username,
+			String password,
+			String dbName) throws IOException {
 		this.pgUsername = username != null ? username : DEFAULT_PG;
 		this.pgPassword = password;
 		this.pgDbName = dbName != null ? dbName : DEFAULT_PG;
@@ -149,7 +148,7 @@ public class EmbeddedPostgres implements Closeable {
 		this.outputRedirector = outputRedirector;
 		this.pgStartupWait = pgStartupWait != null ? pgStartupWait : DEFAULT_PG_STARTUP_WAIT;
 		this.pooling = pooling;
-		
+
 		if (parentDirectory != null) {
 			mkdirs(parentDirectory);
 			cleanOldDataDirectories(parentDirectory);
@@ -161,9 +160,11 @@ public class EmbeddedPostgres implements Closeable {
 		} else {
 			this.dataDirectory = dataDirectory;
 		}
+
 		if (this.dataDirectory == null) {
 			throw new IllegalArgumentException("no data directory");
 		}
+
 		LOG.trace("{} postgres data directory is {}", instanceId, this.dataDirectory);
 		mkdirs(this.dataDirectory);
 
@@ -198,11 +199,11 @@ public class EmbeddedPostgres implements Closeable {
 	}
 
 	public PGConnectionPoolDataSource getPostgresPooledDatabase() {
-	    return getPooledDatabase(DEFAULT_PG, DEFAULT_PG);
+		return getPooledDatabase(DEFAULT_PG, DEFAULT_PG);
 	}
 
 	public PGConnectionPoolDataSource getPostgresPooledDatabase(Map<String, String> properties) {
-	    return getPooledDatabase(DEFAULT_PG, DEFAULT_PG, properties);
+		return getPooledDatabase(DEFAULT_PG, DEFAULT_PG, properties);
 	}
 
 	public PGConnectionPoolDataSource getPooledDatabase(String userName, String dbName) {
@@ -296,16 +297,19 @@ public class EmbeddedPostgres implements Closeable {
 		watch.start();
 		List<String> args = new ArrayList<>();
 		args.addAll(Arrays.asList(
-				"-A", "trust", "-U", DEFAULT_PG,
-				"-D", dataDirectory.getPath(), "-E", "UTF-8"));
+				"-A", "trust",
+				"-U", DEFAULT_PG,
+				"-D", dataDirectory.getPath(),
+				"-E", "UTF-8"));
 		args.addAll(createLocaleOptions());
 		system(INIT_DB, args);
 
+		LOG.info("Ran initdb for: {}", dataDirectory.getPath());
 		LOG.info("{} initdb completed in {}", instanceId, watch);
 	}
 
 	private void createRolesAndDatabase() {
-		try (Connection conn = getDatabase(DEFAULT_PG, DEFAULT_PG).getConnection();
+		try (Connection conn = getPostgresDatabase().getConnection();
 				Statement stmt = conn.createStatement()) {
 			LOG.info("Creating user role: {}", pgUsername);
 			if (!pgUsername.equals(DEFAULT_PG)) {
@@ -344,6 +348,8 @@ public class EmbeddedPostgres implements Closeable {
 		final ProcessBuilder builder = new ProcessBuilder();
 		PG_CTL.applyTo(builder, args);
 
+		PSQL.applyTo(builder, checkVersionPSQL());
+
 		builder.redirectErrorStream(true);
 		builder.redirectError(errorRedirector);
 		builder.redirectOutput(outputRedirector);
@@ -363,6 +369,13 @@ public class EmbeddedPostgres implements Closeable {
 		createRolesAndDatabase();
 	}
 
+	private List<String> checkVersionPSQL() {
+		final List<String> args = new ArrayList<>();
+		args.addAll(Arrays.asList(
+				"-a", "-V"));
+
+		return args;
+	}
 	private List<String> createInitOptions() {
 		final List<String> initOptions = new ArrayList<>();
 		initOptions.addAll(Arrays.asList(
@@ -958,6 +971,7 @@ public class EmbeddedPostgres implements Closeable {
 	private final Command INIT_DB = new Command("initdb");
 	private final Command POSTGRES = new Command(DEFAULT_PG);
 	private final Command PG_CTL = new Command("pg_ctl");
+	private final Command PSQL = new Command("psql");
 
 	private class Command {
 
